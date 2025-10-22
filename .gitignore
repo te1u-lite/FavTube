@@ -1,0 +1,89 @@
+# バイトコードやキャッシュ
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C拡張
+*.so
+
+# 配布 / パッケージ関連
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyInstaller
+# 通常はこのフォルダにビルド時に生成されたファイルが入る
+*.manifest
+*.spec
+
+# ログやデータベース
+*.log
+*.pot
+*.sqlite3
+*.db
+
+# 単体テスト / カバレッジ関連
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IDE / エディタ
+.vscode/
+.idea/
+*.swp
+*.swo
+.project
+.pydevproject
+
+# 環境関連
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# mypy / pytype / pyre
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+
+# pytest / coverage
+.pytest_cache/
+.coverage
+.cache
+
+# その他
+.DS_Store
+Thumbs.db
