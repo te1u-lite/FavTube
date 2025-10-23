@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from .youtube import parse_video_id_from_url, fetch_video_meta
 from typing import List, Optional
 import os
 
@@ -10,7 +11,8 @@ app = FastAPI(title="FavTube")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[os.getenv("FRONTEND_ORIGIN", "http://localhost:5173")],
+    allow_origins=["*"],
+    allow_origin_regex=r"chrome-extension://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -35,6 +37,36 @@ class TagsIn(BaseModel):
 
 class NoteIn(BaseModel):
     note: str
+
+
+class AddUrlIn(BaseModel):
+    url: str
+    rate: int | None = None
+    tags: list[str] | None = None
+
+
+@app.post("/videos/add-url")
+def add_by_url(body: AddUrlIn):
+    vid = parse_video_id_from_url(body.url)
+    if not vid:
+        raise HTTPException(400, "invalid url")
+    meta = fetch_video_meta(vid)
+    with get_conn() as conn:
+        conn.execute("""
+        INSERT INTO videos(id, title, thumbnail_url)
+        VALUES(?,?,?)
+        ON CONFLICT(id) DO UPDATE SET
+        title=COALESCE(excluded.title, videos.title),
+        thumbnail_url=COALESCE(excluded.thumbnail_url, videos.thumbnail_url),
+        updated_at=datetime('now')
+        """, (meta["id"], meta["title"], meta["thumbnail_url"]))
+        if body.rate:
+            conn.execute(
+                "UPDATE videos SET rating=?, updated_at=datetime('now') WHERE id=?", (body.rate, vid))
+        if body.tags:
+            for t in set(body.tags):
+                conn.execute("INSERT OR IGNORE INTO video_tags(video_id, tag) VALUES(?,?)", (vid, t))
+    return {"ok": True, "id": vid, "title": meta["title"]}
 
 
 @app.get("/healthz")

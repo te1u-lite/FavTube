@@ -65,6 +65,7 @@ cover/
 
 # 環境関連
 .env
+*.env
 .venv
 env/
 venv/
@@ -84,6 +85,18 @@ dmypy.json
 .coverage
 .cache
 
-# その他
+# OS / Editor
 .DS_Store
 Thumbs.db
+.vscode/
+
+# Node / TypeScript
+node_modules/
+dist/
+*.log
+*.tsbuildinfo
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
