@@ -53,40 +53,106 @@ function ensureRegistered(id: string, registerFn: () => Promise<any>): Promise<a
     return p;
 }
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+async function fetchVideoInfo(videoId: string){
+    const res = await fetch(`http://localhost:8080/videos/${videoId}`);
+    if(!res.ok) return null;
+    return await res.json();
+}
+
+async function fetchAllTags(): Promise<string[]>{
+    const res = await fetch(`http://localhost:8080/tags/all`);
+    if(!res.ok)return [];
+    return await res.json();
+}
+
+async function ensureVideoExists(VideoId: string, url:string){
+    const res = await fetch("http://localhost:8080/videos/add-url",{
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({url}),
+    });
+    if (!res.ok)console.warn("Video registration failed:", await res.text());
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   (async () => {
     try {
-      if (msg.type === "add-url") {
-        await ensureRegisteredByUrl(msg.url);
-      }
-
-      if (msg.type === "rate") {
-        await ensureRegisteredById(msg.id);
-        await api(`/videos/${msg.id}/rating`,{
-            method: "POST",
-            body: JSON.stringify({ rating: msg.rating})
-        });
-      }
-
-      if (msg.type === "tag-add") {
-        await ensureRegisteredById(msg.id);
-        const tags = String(msg.tags)
-            .split(/[,\u3001\uFF0C]/)
-            .map((t: string) => t.trim())
-            .filter(Boolean);
-        if(tags.length){
-            await api(`/videos/${msg.id}/tags`, {
-                method: "POST",
-                body: JSON.stringify({ tags})
-            });
+      // --- 動画情報取得 ---
+      if (msg.type === "get-video-info") {
+        const id = msg.id;
+        let video: any = null;
+        try {
+          const res = await fetch(`http://localhost:8080/videos/${id}`);
+          if (res.ok) {
+            video = await res.json();
+          }
+        } catch (e) {
+          console.warn("動画取得エラー:", e);
         }
+
+        // タグ一覧（404でも動作）
+        let tags: string[] = [];
+        try {
+          const res2 = await fetch(`http://localhost:8080/tags/all`);
+          if (res2.ok) tags = await res2.json();
+        } catch (e) {
+          console.warn("タグ取得エラー:", e);
+        }
+
+        sendResponse({ video, tags });
+        return;
       }
-      
-      sendResponse({ ok: true });
+
+      // --- 評価登録 ---
+      if (msg.type === "rate") {
+        const videoId = msg.id;
+        const url = `https://www.youtube.com/watch?v=${videoId}`;
+
+        // 存在しなければ登録してから評価
+        await fetch("http://localhost:8080/videos/add-url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url }),
+        });
+
+        const res = await fetch(`http://localhost:8080/videos/${videoId}/rating`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ rating: msg.rating }),
+        });
+
+        let payload: any = null;
+        try {payload = await res.json(); }catch {}
+        sendResponse({ ok: res.ok, title: payload?.title || null});
+
+        return;
+      }
+
+      // --- タグ追加 ---
+      if (msg.type === "tag-add") {
+        const videoId = msg.id;
+        const tags = msg.tags;
+        await fetch("http://localhost:8080/videos/add-url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: `https://www.youtube.com/watch?v=${videoId}` }),
+        });
+        const res = await fetch(`http://localhost:8080/videos/${videoId}/tags`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tags }),
+        });
+        sendResponse({ ok: res.ok });
+        return;
+      }
+
+      // --- 未対応 ---
+      sendResponse({ ok: false, error: "unknown message type" });
     } catch (e) {
-      console.error(e);
+      console.error("background.ts error:", e);
       sendResponse({ ok: false, error: String(e) });
     }
   })();
-  return true;
+
+  return true; // これを忘れると UI が固まる
 });

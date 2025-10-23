@@ -78,3 +78,16 @@ def fetch_video_meta(video_id: str) -> dict:
         "title": snip.get("title"),
         "thumbnail_url": thumb_url,
     }
+
+
+def fetch_youtube_title(video_id: str) -> str | None:
+    """YouTube Data APIを使って動画タイトルを取得"""
+    try:
+        url = f"https://www.googleapis.com/youtube/v3/videos?part=snippet&id={video_id}&key={YOUTUBE_API_KEY}"
+        res = requests.get(url, timeout=5)
+        data = res.json()
+        if "items" in data and len(data["items"]) > 0:
+            return data["items"][0]["snippet"]["title"]
+    except Exception as e:
+        print("YouTube API error:", e)
+    return None

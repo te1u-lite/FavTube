@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from .youtube import parse_video_id_from_url, fetch_video_meta
+from .youtube import parse_video_id_from_url, fetch_video_meta, fetch_youtube_title
 from typing import List, Optional
 import os
 
@@ -130,12 +130,27 @@ def upsert_video(v: VideoUpsert):
 def set_rating(id: str, body: RatingIn):
     if not (1 <= body.rating <= 5):
         raise HTTPException(400, "rating must be 1..5")
+
     with get_conn() as conn:
-        cur = conn.execute(
-            "UPDATE videos SET rating=?, updated_at=datetime('now') WHERE id=?", (body.rating, id))
-        if cur.rowcount == 0:
-            raise HTTPException(404, "video not found")
-    return {"ok": True}
+        cur = conn.execute("SELECT 1 FROM videos WHERE id=?", (id,)).fetchone()
+        if not cur:
+            conn.execute("INSERT INTO videos (id, title) VALUES (?, ?)", (id, None))
+
+        # ★タイトルをYouTubeから取得
+        title = fetch_youtube_title(id)
+        if title:
+            conn.execute(
+                "UPDATE videos SET title=?, rating=?, updated_at=datetime('now') WHERE id=?",
+                (title, body.rating, id),
+            )
+        else:
+            # タイトル取得できない場合は評価だけ更新
+            conn.execute(
+                "UPDATE videos SET rating=?, updated_at=datetime('now') WHERE id=?",
+                (body.rating, id),
+            )
+
+    return {"ok": True, "title": title}
 
 
 @app.post("/videos/{id}/tags")
@@ -153,6 +168,14 @@ def remove_tag(id: str, tag: str):
         conn.execute("DELETE FROM video_tags WHERE video_id=? AND tag=?", (id, tag))
         conn.execute("UPDATE videos SET updated_at=datetime('now') WHERE id=?", (id,))
     return {"ok": True}
+
+
+@app.get("/tags/all")
+def get_all_tags():
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT tag FROM video_tags ORDER BY tag COLLATE NOCASE").fetchall()
+    return [r["tag"] for r in rows]
 
 
 @app.post("/videos/{id}/note")
