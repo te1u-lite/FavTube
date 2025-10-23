@@ -1,6 +1,9 @@
 import argparse
 from .db import get_conn, init_db
 from .youtube import parse_video_id_from_url, fetch_video_meta
+import csv
+import os
+from pathlib import Path
 
 
 def cmd_add(args):
@@ -133,6 +136,87 @@ def cmd_tag_rm(args):
     print(f"Tag removed: {args.id} -{args.tag}")
 
 
+# ---- CSV エクスポート ----
+def cmd_export_csv(args):
+    outdir = Path(args.dir)
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    # videos.csv
+    with get_conn() as conn, open(outdir / "videos.csv", "w", newline="", encoding="utf-8-sig")as f:
+        w = csv.writer(f)
+        w.writerow(["id", "title", "thumbnail_url", "rating", "note", "created_at", "updated_at"])
+        for r in conn.execute("SELECT id,title,thumbnail_url,rating,note,created_at,updated_at FROM videos ORDER BY created_at DESC"):
+            w.writerow([r["id"], r["title"], r["thumbnail_url"], r["rating"],
+                       r["note"], r["created_at"], r["updated_at"]])
+
+    # video_tags.csv
+    with get_conn() as conn, open(outdir / "video_tags.csv", "w", newline="", encoding="utf-8-sig") as f:
+        w = csv.writer(f)
+        w.writerow(["video_id", "tag"])
+        for r in conn.execute("SELECT video_id, tag FROM video_tags ORDER BY video_id, tag"):
+            w.writerow([r["video_id"], r["tag"]])
+
+    print(f"Exported to: {outdir}\\videos.csv, {outdir}\\video_tags.csv")
+
+# ---- CSV インポート ----
+
+
+def cmd_import_csv(args):
+    indir = Path(args.dir)
+    vids_csv = indir / "videos.csv"
+    tags_csv = indir / "video_tags.csv"
+    if not vids_csv.exists():
+        print(f"ERROR: {vids_csv} not found")
+        return
+
+    with get_conn() as conn:
+        # videos.csv
+        with open(vids_csv, newline="", encoding="utf-8-sig")as f:
+            reader = csv.DictReader(f)
+            n = 0
+            for row in reader:
+                rating = row.get("rating")
+                rating_val = int(rating) if (rating and rating.strip().isdigit())else None
+                conn.execute("""
+                INSERT INTO videos(id,title,thumbnail_url,rating,note,created_at,updated_at)
+                VALUES(?,?,?,?,?,?,?)
+                ON CONFLICT(id) DO UPDATE SET
+                  title=excluded.title,
+                  thumbnail_url=excluded.thumbnail_url,
+                  rating=excluded.rating,
+                  note=excluded.note,
+                  updated_at=datetime('now')
+                """, (
+                    row.get("id"), row.get("title"), row.get("thumbnail_url"),
+                    rating_val, row.get("note"),
+                    row.get("created_at") or None,  # created_atは渡されれば使う
+                    row.get("updated_at") or None
+                ))
+                n += 1
+            print(f"Imported videos: {n}")
+
+        # video_tags.csv
+        if tags_csv.exists():
+            with open(tags_csv, newline="", encoding="utf-8-sig")as f:
+                reader = csv.DictReader(f)
+                m = 0
+                skipped = 0
+                for row in reader:
+                    vid = row.get("video_id")
+                    tag = (row.get("tag") or "").strip()
+                    if not vid or not tag:
+                        continue
+                    # videos に存在しなければスキップ
+                    v = conn.execute("SELECT 1 FROM videos WHERE id=?", (vid,)).fetchone()
+                    if not v:
+                        skipped += 1
+                        continue
+                    conn.execute(
+                        "INSERT OR IGNORE INTO video_tags(video_id, tag) VALUES(?,?)", (vid, tag))
+                    m += 1
+                print(f"Imported tags: {m} (skipped without video: {skipped})")
+
+
 def main():
     p = argparse.ArgumentParser(prog="favtube")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -178,6 +262,14 @@ def main():
     tr.add_argument("id")
     tr.add_argument("tag")
     tr.set_defaults(func=cmd_tag_rm)
+
+    ex = sub.add_parser("export-csv", help="CSVインポート")
+    ex.add_argument("--dir", default="backup")
+    ex.set_defaults(func=cmd_export_csv)
+
+    im = sub.add_parser("import-csv", help="CSVインポート")
+    im.add_argument("--dir", default="backup")
+    im.set_defaults(func=cmd_import_csv)
 
     args = p.parse_args()
     args.func(args)
