@@ -79,6 +79,8 @@ function injectMiniUI(videoId: string) {
     }
   };
 
+  chrome.runtime.sendMessage({ type: "add-url", url: location.href }, () => {});
+
   root.appendChild(regBtn);
   root.appendChild(starsWrap);
   root.appendChild(input);
@@ -89,6 +91,7 @@ function injectMiniUI(videoId: string) {
   // 初回
   const id = parseVideoIdFromUrl(location.href);
   if (id) injectMiniUI(id);
+
 
   // SPA遷移（YouTubeはURLだけ変わることがある）に簡易追従
   let last = location.href;
